@@ -1,0 +1,600 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="mobile-web-app-capable" content="yes">
+
+    <title>AforArm - Mantenimiento Estaciones Aforo</title>
+    <link rel="icon" type="image/png" href="https://i.postimg.cc/wjWHSNZC/Afor-Arm.png">
+    <link rel="apple-touch-icon" href="https://i.postimg.cc/wjWHSNZC/Afor-Arm.png">
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-database-compat.js"></script>
+
+    <style>
+        :root {
+            --primary: #27ae60;
+            --primary-dark: #219653;
+            --danger: #e74c3c;
+            --warning: #f39c12;
+            --dark: #2c3e50;
+            --gray: #95a5a6;
+            --light: #f5f5f5;
+        }
+
+        body { font-family: Arial, sans-serif; background: var(--light); color: #333; margin: 0; min-height: 100vh; }
+        #app { display: flex; min-height: 100vh; }
+
+        #floating-menu-btn {
+            display: none;
+            position: fixed;
+            top: 15px;
+            left: 15px;
+            z-index: 1200;
+            background: var(--primary);
+            color: white;
+            border: none;
+            border-radius: 50%;
+            width: 50px;
+            height: 50px;
+            font-size: 1.8rem;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+            cursor: pointer;
+        }
+
+        #mobile-menu-modal {
+            display: none;
+            position: fixed;
+            top: 0; left: 0;
+            width: 100%; height: 100%;
+            background: rgba(0,0,0,0.5);
+            z-index: 1100;
+        }
+
+        #mobile-menu-content {
+            background: white;
+            width: 80%; max-width: 300px;
+            margin: 70px auto 0;
+            padding: 1.5rem;
+            border-radius: 12px;
+            box-shadow: 0 8px 24px rgba(0,0,0,0.3);
+        }
+
+        #mobile-menu-content ul { list-style: none; padding: 0; margin: 0; }
+        #mobile-menu-content li { padding: 1rem; font-size: 1.1rem; cursor: pointer; border-bottom: 1px solid #eee; }
+        #mobile-menu-content li:last-child { border-bottom: none; }
+        #mobile-menu-content li:hover { background: #f8f8f8; }
+
+        #sidebar {
+            display: none;
+            width: 260px;
+            background: var(--dark);
+            color: white;
+            padding: 1.2rem 0.8rem;
+            text-align: center;
+            position: fixed;
+            top: 0; left: 0;
+            height: 100%;
+            z-index: 1000;
+            overflow-y: auto;
+        }
+
+        #logo { width: 120px; height: auto; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.3); margin-bottom: 1rem; }
+        #sidebar h2 { margin: 0.5rem 0 1.2rem; font-size: 1.3rem; }
+        #menu ul { list-style: none; }
+        #menu li { padding: 0.9rem; cursor: pointer; border-radius: 6px; margin: 0.4rem 0; font-size: 1.05rem; }
+        #menu li:hover, #menu li.active { background: #34495e; }
+
+        #main { flex: 1; padding: 1.2rem; margin-left: 0; max-width: 100%; }
+
+        h1 { color: var(--dark); margin: 0.5rem 0 1rem; font-size: 1.6rem; }
+        .section { display: none; background: white; padding: 1.5rem; border-radius: 10px; box-shadow: 0 2px 12px rgba(0,0,0,0.08); }
+        .section.active { display: block; }
+
+        .welcome { text-align: center; padding: 2rem 1rem; }
+        .welcome img { max-width: 140px; margin: 1.2rem auto; display: block; }
+
+        #calendario-mes { margin: 1rem 0; text-align: center; }
+        #mes-selector { font-size: 1.2rem; padding: 0.5rem; margin-bottom: 1rem; width: 200px; }
+        .calendario-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 5px; text-align: center; }
+        .dia-header { font-weight: bold; background: #ecf0f1; padding: 0.5rem; }
+        .dia { padding: 0.8rem; border: 1px solid #ddd; border-radius: 6px; min-height: 60px; position: relative; cursor: pointer; transition: background 0.2s; }
+        .dia:hover { background: #f0f0f0; }
+        .dia.has-revision { background: #e8f5e9; border-color: var(--primary); font-weight: bold; }
+        .dia.has-revision::after { content: "●"; color: var(--primary); position: absolute; bottom: 5px; left: 50%; transform: translateX(-50%); font-size: 1.4rem; }
+        .dia-num { font-size: 1.1rem; margin-bottom: 0.3rem; }
+
+        table { width: 100%; border-collapse: collapse; margin: 1rem 0; font-size: 0.95rem; }
+        th, td { border: 1px solid #ddd; padding: 0.7rem; text-align: left; }
+        th { background: #ecf0f1; font-weight: bold; }
+
+        input, textarea, select, button { font-size: 1rem; padding: 0.7rem; margin: 0.4rem 0; border-radius: 6px; border: 1px solid #ccc; width: 100%; min-height: 44px; }
+        button { background: var(--primary); color: white; border: none; cursor: pointer; }
+        button:hover { background: var(--primary-dark); }
+
+        .action-icons {
+            display: flex;
+            gap: 12px;
+            justify-content: flex-end;
+            margin-top: 8px;
+        }
+
+        .action-icon {
+            font-size: 1.4rem;
+            cursor: pointer;
+            padding: 6px;
+            border-radius: 6px;
+            transition: background 0.2s;
+        }
+
+        .action-icon:hover { background: rgba(0,0,0,0.1); }
+
+        .edit-icon { color: #f39c12; }
+        .delete-icon { color: #e74c3c; }
+        .pdf-icon { color: #3498db; }
+
+        .historial-item {
+            border-left: 4px solid #3498db;
+            padding: 1.2rem;
+            margin: 1.2rem 0;
+            background: #f9fcff;
+            border-radius: 6px;
+            position: relative;
+        }
+
+        @media (max-width: 768px) {
+            #floating-menu-btn { display: block; }
+            #sidebar { display: none; }
+            #main { margin-left: 0; padding: 1rem 0.8rem; }
+        }
+
+        @media (min-width: 769px) {
+            #sidebar { display: block; position: fixed; transform: none !important; }
+            #main { margin-left: 260px; }
+            #floating-menu-btn, #mobile-menu-modal { display: none; }
+        }
+    </style>
+</head>
+<body>
+
+<div id="app">
+    <button id="floating-menu-btn">☰</button>
+
+    <div id="mobile-menu-modal">
+        <div id="mobile-menu-content">
+            <h3 style="margin:0 0 1rem; text-align:center;">Menú</h3>
+            <ul>
+                <li data-section="inicio">Inicio</li>
+                <li data-section="aforadores">Aforadores</li>
+                <li data-section="revision">Revisión</li>
+                <li data-section="historial">Historial</li>
+            </ul>
+            <button onclick="closeMobileMenu()" style="margin-top:1rem; background:#ccc; width:100%;">Cerrar</button>
+        </div>
+    </div>
+
+    <div id="sidebar">
+        <img id="logo" src="https://i.postimg.cc/wjWHSNZC/Afor-Arm.png" alt="AforArm">
+        <h2>AforArm</h2>
+        <div id="menu">
+            <ul>
+                <li data-section="inicio" class="active">Inicio</li>
+                <li data-section="aforadores">Aforadores</li>
+                <li data-section="revision">Revisión</li>
+                <li data-section="historial">Historial</li>
+            </ul>
+        </div>
+    </div>
+
+    <div id="main">
+        <div id="inicio" class="section active">
+            <div class="welcome">
+                <h1>Bienvenido a AforArm</h1>
+                <img src="https://i.postimg.cc/wjWHSNZC/Afor-Arm.png" alt="AforArm" style="max-width: 140px; margin: 1.2rem auto; display: block;">
+                <p style="font-size:1.1em; margin:1.5rem 0;">
+                    Gestión de mantenimiento de estaciones de aforo de vehículos
+                </p>
+            </div>
+        </div>
+
+        <div id="aforadores" class="section">
+            <h1>Estaciones de Aforo</h1>
+            <div>
+                <h3>Añadir / Editar estación</h3>
+                <input type="hidden" id="edit-aforador-old-id">
+                <input type="text" id="id-aforador" placeholder="ID o Nombre (ej: AF-001-Barcelona)" required>
+                <input type="text" id="ubicacion" placeholder="Ubicación / PK (ej: C-32 km 145)">
+                <button onclick="guardarAforador()">Guardar Estación</button>
+                <button id="cancel-edit-aforador" class="gray-btn" onclick="cancelarEdicionAforador()">Cancelar</button>
+            </div>
+            <h3>Lista de estaciones</h3>
+            <table id="tabla-aforadores">
+                <thead>
+                    <tr>
+                        <th>ID / Nombre</th>
+                        <th>Ubicación</th>
+                        <th>Última revisión</th>
+                        <th>Acciones</th>
+                    </tr>
+                </thead>
+                <tbody></tbody>
+            </table>
+        </div>
+
+        <div id="revision" class="section">
+            <h1 id="titulo-revision">Nueva Revisión</h1>
+            <select id="select-aforador-revision" required>
+                <option value="">Selecciona estación...</option>
+            </select>
+
+            <form id="form-revision">
+                <input type="hidden" id="edit-revision-index" value="-1">
+                <h3>Datos de la revisión</h3>
+                <input type="date" id="fecha-revision" required>
+                <input type="text" id="tecnico" placeholder="Técnico responsable" required>
+                <textarea id="observaciones" rows="4" placeholder="Observaciones..."></textarea>
+
+                <h3>Checklist</h3>
+                <table id="checklist-table">
+                    <tr><th>Componente</th><th>Comprobación</th><th class="check">OK</th><th>Comentario / Medida</th></tr>
+                    <tr><td>Máquina aforadora</td><td>Funcionamiento (conteo vehículos)</td><td><input type="checkbox"></td><td><input type="text"></td></tr>
+                    <tr><td>Máquina aforadora</td><td>Conexiones eléctricas y cables</td><td><input type="checkbox"></td><td><input type="text"></td></tr>
+                    <tr><td>Modem</td><td>Conexión y transmisión de datos</td><td><input type="checkbox"></td><td><input type="text"></td></tr>
+                    <tr><td>Batería</td><td>Voltaje / Estado <input type="text" size="8" placeholder="ej: 12.6V"></td><td><input type="checkbox"></td><td><input type="text"></td></tr>
+                    <tr><td>Placa solar</td><td>Limpieza / Producción (V/W)</td><td><input type="checkbox"></td><td><input type="text"></td></tr>
+                    <tr><td>Armario metálico</td><td>Estanqueidad, óxido, cerradura</td><td><input type="checkbox"></td><td><input type="text"></td></tr>
+                    <tr><td>Sistema general</td><td>Funcionamiento integral + logs/alarmas</td><td><input type="checkbox"></td><td><input type="text"></td></tr>
+                </table>
+
+                <button type="button" id="btn-guardar-revision" onclick="guardarRevision()">Guardar Revisión</button>
+                <button type="button" id="cancel-edit" class="gray-btn" onclick="cancelarEdicionRevision()">Cancelar</button>
+            </form>
+        </div>
+
+        <div id="historial" class="section">
+            <h1>Historial de Revisiones</h1>
+
+            <div id="calendario-mes">
+                <label for="mes-selector">Selecciona mes:</label>
+                <input type="month" id="mes-selector" onchange="generarCalendario()">
+            </div>
+
+            <div id="calendario-grid" class="calendario-grid"></div>
+
+            <div style="margin: 1rem 0;">
+                <button onclick="exportarSeleccionadasDelDia()">Descargar PDF seleccionadas</button>
+            </div>
+
+            <h3>Revisiones del día seleccionado</h3>
+            <div id="contenido-historial">
+                <p style="color:#777; text-align:center;">Selecciona un día en el calendario para ver las revisiones.</p>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+// FIREBASE CONFIG
+const firebaseConfig = {
+    apiKey: "AIzaSyDCgh0qASbuhZBhmwORPnTdkOGc6CGKCKw",
+    authDomain: "chatamarillos.firebaseapp.com",
+    databaseURL: "https://chatamarillos-default-rtdb.europe-west1.firebasedatabase.app",
+    projectId: "chatamarillos",
+    storageBucket: "chatamarillos.firebasestorage.app",
+    messagingSenderId: "1037628514726",
+    appId: "1:1037628514726:web:615cbc7ea3aa9997adaf67",
+    measurementId: "G-YCRYL0PTGW"
+};
+
+firebase.initializeApp(firebaseConfig);
+const db = firebase.database();
+
+const aforadoresRef = db.ref('aforadores');
+const revisionesRef = db.ref('revisiones_aforadores');
+
+let aforadores = [];
+let revisiones = {};
+
+// CARGA DE DATOS
+aforadoresRef.on('value', snap => {
+    const val = snap.val();
+    aforadores = val ? Object.values(val) : [];
+    renderAforadores();
+});
+
+revisionesRef.on('value', snap => {
+    revisiones = snap.val() || {};
+    renderAforadores();
+});
+
+// RENDER AFOADORES – iconos
+function renderAforadores() {
+    const tbody = document.querySelector('#tabla-aforadores tbody');
+    tbody.innerHTML = '';
+    const selRev = document.getElementById('select-aforador-revision');
+    selRev.innerHTML = '<option value="">Selecciona estación...</option>';
+
+    aforadores.forEach(af => {
+        const ultima = revisiones[af.id] && revisiones[af.id].length > 0
+            ? new Date(revisiones[af.id][0].fecha).toLocaleDateString('es-ES')
+            : '—';
+
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+            <td>${af.id}</td>
+            <td>${af.ubicacion || '—'}</td>
+            <td>${ultima}</td>
+            <td>
+                <div class="action-icons">
+                    <span class="action-icon edit-icon" onclick="editarAforador('${af.id}')">✏️</span>
+                    <span class="action-icon delete-icon" onclick="eliminarAforador('${af.id}')">🗑️</span>
+                </div>
+            </td>
+        `;
+        tbody.appendChild(tr);
+
+        const opt = `<option value="${af.id}">${af.id} — ${af.ubicacion || ''}</option>`;
+        selRev.insertAdjacentHTML('beforeend', opt);
+    });
+}
+
+// CALENDARIO
+function generarCalendario() {
+    const mesSelector = document.getElementById('mes-selector');
+    const grid = document.getElementById('calendario-grid');
+    grid.innerHTML = '';
+
+    if (!mesSelector.value) {
+        grid.innerHTML = '<p style="color:#777; text-align:center;">Selecciona un mes para ver el calendario.</p>';
+        return;
+    }
+
+    const [year, month] = mesSelector.value.split('-').map(Number);
+    const primerDia = new Date(year, month - 1, 1);
+    const ultimoDia = new Date(year, month, 0);
+    const diasMes = ultimoDia.getDate();
+    const diaSemanaInicio = primerDia.getDay() || 7;
+
+    const diasSemana = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom'];
+    diasSemana.forEach(d => {
+        const div = document.createElement('div');
+        div.className = 'dia-header';
+        div.textContent = d;
+        grid.appendChild(div);
+    });
+
+    for (let i = 1; i < diaSemanaInicio; i++) {
+        grid.appendChild(document.createElement('div'));
+    }
+
+    for (let d = 1; d <= diasMes; d++) {
+        const fechaStr = `${year}-${String(month).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+        const div = document.createElement('div');
+        div.className = 'dia';
+        div.innerHTML = `<div class="dia-num">${d}</div>`;
+
+        let tieneRevision = false;
+        Object.keys(revisiones).forEach(estacionId => {
+            if (revisiones[estacionId] && revisiones[estacionId].some(rev => rev.fecha === fechaStr)) {
+                tieneRevision = true;
+            }
+        });
+
+        if (tieneRevision) {
+            div.classList.add('has-revision');
+            div.onclick = () => mostrarRevisionesDelDia(fechaStr);
+        }
+
+        grid.appendChild(div);
+    }
+}
+
+// MOSTRAR REVISIONES DEL DÍA – con iconos
+function mostrarRevisionesDelDia(fecha) {
+    const cont = document.getElementById('contenido-historial');
+    cont.innerHTML = `
+        <h3>Revisiones del ${fecha}</h3>
+        <button onclick="exportarSeleccionadasDelDia('${fecha}')">Descargar PDF seleccionadas</button>
+    `;
+
+    let hayAlgo = false;
+    Object.keys(revisiones).forEach(estacionId => {
+        const af = aforadores.find(a => a.id === estacionId);
+        if (revisiones[estacionId]) {
+            revisiones[estacionId].forEach((rev, idx) => {
+                if (rev.fecha === fecha) {
+                    hayAlgo = true;
+                    const div = document.createElement('div');
+                    div.className = 'historial-item';
+                    div.innerHTML = `
+                        <div class="action-icons" style="position: absolute; top: 10px; right: 10px;">
+                            <span class="action-icon edit-icon" onclick="editarRevision('${estacionId}', ${idx})">✏️</span>
+                            <span class="action-icon delete-icon" onclick="borrarRevision('${estacionId}', ${idx})">🗑️</span>
+                            <span class="action-icon pdf-icon" onclick="imprimirRevision('${estacionId}', ${idx})">📄</span>
+                        </div>
+                        <div class="revision-content">
+                            <strong>${af ? af.id + ' - ' + (af.ubicacion || '') : 'Estación desconocida'} – ${rev.tecnico}</strong>
+                            <div style="margin:8px 0; white-space:pre-wrap;">${rev.observaciones || '<i>Sin observaciones</i>'}</div>
+                        </div>
+                        <label style="display: block; margin-top: 1rem;">
+                            <input type="checkbox" class="select-revision-dia" data-estacion="${estacionId}" data-index="${idx}">
+                            Seleccionar para PDF múltiple
+                        </label>
+                    `;
+                    cont.appendChild(div);
+                }
+            });
+        }
+    });
+
+    if (!hayAlgo) {
+        cont.innerHTML += '<p style="color:#777;">No hay revisiones en este día.</p>';
+    }
+}
+
+// EDITAR REVISIÓN – carga TODOS los campos
+function editarRevision(estacionId, index) {
+    const rev = revisiones[estacionId][index];
+    if (!rev) return alert('Revisión no encontrada');
+
+    // Cambiar a pestaña Revisión
+    document.querySelector('[data-section="revision"]').click();
+
+    // Cargar estación
+    document.getElementById('select-aforador-revision').value = estacionId;
+
+    // Cargar datos básicos
+    document.getElementById('fecha-revision').value = rev.fecha;
+    document.getElementById('tecnico').value = rev.tecnico;
+    document.getElementById('observaciones').value = rev.observaciones || '';
+
+    // Guardar índice para edición
+    document.getElementById('edit-revision-index').value = index;
+
+    // Cargar CHECKLIST
+    const checklistRows = document.querySelectorAll('#checklist-table tr:not(:first-child)');
+    checklistRows.forEach((row, i) => {
+        const checkbox = row.querySelector('input[type="checkbox"]');
+        const comentarioInput = row.querySelector('input[type="text"]');
+
+        if (rev.checklist && rev.checklist[i]) {
+            const item = rev.checklist[i];
+            checkbox.checked = item.estado === 'OK' || item.estado === true;
+            comentarioInput.value = item.comentario || '';
+        } else {
+            checkbox.checked = false;
+            comentarioInput.value = '';
+        }
+    });
+
+    // Cambiar título y botón
+    document.getElementById('titulo-revision').textContent = 'Editar Revisión';
+    document.getElementById('btn-guardar-revision').textContent = 'Actualizar Revisión';
+
+    alert('Revisión cargada para edición. Modifica y pulsa "Actualizar Revisión".');
+}
+
+// BORRAR REVISIÓN
+function borrarRevision(estacionId, index) {
+    if (!confirm('¿Seguro que quieres BORRAR esta revisión?')) return;
+
+    revisionesRef.child(estacionId).transaction(arr => {
+        if (!arr || !arr[index]) return arr;
+        arr.splice(index, 1);
+        return arr;
+    }).then(() => {
+        alert('Revisión borrada');
+        const mes = document.getElementById('mes-selector').value;
+        mostrarRevisionesDelDia(mes + '-01');
+        generarCalendario();
+    }).catch(err => alert('Error al borrar: ' + err.message));
+}
+
+// GUARDAR / ACTUALIZAR REVISIÓN
+function guardarRevision() {
+    const estacionId = document.getElementById('select-aforador-revision').value;
+    if (!estacionId) return alert('Selecciona una estación');
+
+    const fecha = document.getElementById('fecha-revision').value;
+    const tecnico = document.getElementById('tecnico').value;
+    const observaciones = document.getElementById('observaciones').value;
+
+    // Leer checklist
+    const checklist = [];
+    const rows = document.querySelectorAll('#checklist-table tr:not(:first-child)');
+    rows.forEach(row => {
+        const checkbox = row.querySelector('input[type="checkbox"]');
+        const comentario = row.querySelector('input[type="text"]').value;
+        checklist.push({
+            estado: checkbox.checked ? 'OK' : '',
+            comentario: comentario || ''
+        });
+    });
+
+    const nuevaRev = { fecha, tecnico, observaciones, checklist };
+
+    const index = parseInt(document.getElementById('edit-revision-index').value);
+
+    if (index >= 0) {
+        // ACTUALIZAR
+        revisionesRef.child(estacionId).transaction(arr => {
+            if (!arr) arr = [];
+            arr[index] = nuevaRev;
+            return arr;
+        }).then(() => {
+            alert('Revisión actualizada correctamente');
+            resetFormularioRevision();
+        }).catch(err => alert('Error al actualizar: ' + err.message));
+    } else {
+        // NUEVA
+        revisionesRef.child(estacionId).transaction(arr => {
+            if (!arr) arr = [];
+            arr.push(nuevaRev); // o unshift para orden inverso
+            return arr;
+        }).then(() => {
+            alert('Revisión guardada');
+            resetFormularioRevision();
+        }).catch(err => alert('Error al guardar: ' + err.message));
+    }
+}
+
+// CANCELAR EDICIÓN / NUEVA
+function cancelarEdicionRevision() {
+    if (confirm('¿Cancelar los cambios? Se perderán las modificaciones.')) {
+        resetFormularioRevision();
+    }
+}
+
+function resetFormularioRevision() {
+    document.getElementById('select-aforador-revision').value = '';
+    document.getElementById('fecha-revision').value = '';
+    document.getElementById('tecnico').value = '';
+    document.getElementById('observaciones').value = '';
+    document.getElementById('edit-revision-index').value = '-1';
+    document.getElementById('titulo-revision').textContent = 'Nueva Revisión';
+    document.getElementById('btn-guardar-revision').textContent = 'Guardar Revisión';
+
+    // Reset checklist
+    document.querySelectorAll('#checklist-table input[type="checkbox"]').forEach(cb => cb.checked = false);
+    document.querySelectorAll('#checklist-table input[type="text"]').forEach(input => input.value = '');
+}
+
+// Navegación + menú flotante
+document.querySelectorAll('#menu li, #mobile-menu-content li').forEach(li => {
+    li.addEventListener('click', () => {
+        document.querySelectorAll('#menu li').forEach(l => l.classList.remove('active'));
+        li.classList.add('active');
+        document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
+        document.getElementById(li.dataset.section).classList.add('active');
+
+        if (li.dataset.section === 'historial') {
+            const hoy = new Date();
+            const mesActual = hoy.toISOString().slice(0,7);
+            document.getElementById('mes-selector').value = mesActual;
+            generarCalendario();
+        }
+
+        closeMobileMenu();
+    });
+});
+
+const floatingBtn = document.getElementById('floating-menu-btn');
+const modal = document.getElementById('mobile-menu-modal');
+
+floatingBtn.addEventListener('click', () => {
+    modal.style.display = 'block';
+});
+
+function closeMobileMenu() {
+    modal.style.display = 'none';
+}
+
+modal.addEventListener('click', e => {
+    if (e.target === modal) closeMobileMenu();
+});
+</script>
+</body>
+</html>
